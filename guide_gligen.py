@@ -82,10 +82,10 @@ def load_ckpt(ckpt_path):
     diffusion = instantiate_from_config(config['diffusion']).to(device)
 
     # donot need to load official_ckpt for self.model here, since we will load from our ckpt
-    model.load_state_dict( saved_ckpt['model'] )
-    autoencoder.load_state_dict( saved_ckpt["autoencoder"]  )
-    text_encoder.load_state_dict( saved_ckpt["text_encoder"]  )
-    diffusion.load_state_dict( saved_ckpt["diffusion"]  )
+    model.load_state_dict( saved_ckpt['model'],strict=False )
+    autoencoder.load_state_dict( saved_ckpt["autoencoder"] ,strict=False )
+    text_encoder.load_state_dict( saved_ckpt["text_encoder"] ,strict=False )
+    diffusion.load_state_dict( saved_ckpt["diffusion"],strict=False  )
 
     return model, autoencoder, text_encoder, diffusion, config
 
@@ -478,7 +478,7 @@ if __name__ == "__main__":
     
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--folder", type=str,  default="visual", help="root folder for output")
+    parser.add_argument("--folder", type=str,  default="results", help="root folder for output")
     parser.add_argument('--ckpt', type=str, default='gligen_checkpoints/diffusion_pytorch_model.bin', help='path to the checkpoint')
 
     parser.add_argument("--batch_size", type=int, default=1, help="")
@@ -488,7 +488,7 @@ if __name__ == "__main__":
     # parser.add_argument("--negative_prompt", type=str,  default="cropped images", help="")
     parser.add_argument("--type", choices=['counting','spatial','color','size'])
     parser.add_argument("--box_pickle", type=str, default=None)
-    parser.add_argument("--file_save", type=str)
+    parser.add_argument("--file_save", type=str, default="image")
     parser.add_argument("--data_type", choices=['HRS','Drawbench'], default='HRS')
     parser.add_argument("--loss_type", choices=['standard','SAR','CAR','SAR_CAR'],default='SAR_CAR', help='Choose one option among the four options for what types of losses ')
     parser.add_argument("--use_gpt4", action='store_true', help='choose the way to generate layout')
@@ -531,20 +531,19 @@ if __name__ == "__main__":
             prompts = read_csv('../data_evaluate_LLM/drawbench/drawbench.csv','Positional')
             list_box = ['../data_evaluate_LLM/gpt_generated_box_drawbench/spatial.p']
     # box_data = load_box(list_box[0])
-    if args.use_gpt4==False:
+    """ if args.use_gpt4==False:
         box_data = load_box(args.box_pickle)
-        keys = box_data.keys()
-        
+        keys = box_data.keys() """
+    prompts=['a cat and a dog']
     models = load_ckpt(meta_list[0]["ckpt"])
     info_files = {}
     for i, prompt in enumerate(prompts):
-       
         # if i==2927 or i == 2535 or i==131 or i==2880 or i == 1423: continue
         for meta in meta_list:
             pp = prompt[0]
             meta["prompt"] = pp 
             text = pp 
-            if args.use_gpt4 == False:
+            """ if args.use_gpt4 == False:
                 if pp in keys : 
                     o_names, o_boxes = box_data[text]
                     print('box available', i)
@@ -558,8 +557,11 @@ if __name__ == "__main__":
                 # call gpt4 to generate box
                 o_names, o_boxes = generate_box_gpt4(text)
                 print('box not available', i)
-                print('o_names', o_names)
-                
+                print('o_names', o_names) """
+
+            o_names=['cat','dog']
+            o_boxes=[(287, 140, 467, 335), (31, 97, 216, 286)]
+            
             #number of generated images for one prompt
             for k in range(1):
                 starting_noise = torch.randn(args.batch_size, 4, 64, 64).to(device) 
