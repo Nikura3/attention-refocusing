@@ -84,7 +84,7 @@ def load_ckpt(ckpt_path):
     # donot need to load official_ckpt for self.model here, since we will load from our ckpt
     model.load_state_dict( saved_ckpt['model'] )
     autoencoder.load_state_dict( saved_ckpt["autoencoder"]  )
-    text_encoder.load_state_dict( saved_ckpt["text_encoder"]  )
+    text_encoder.load_state_dict( saved_ckpt["text_encoder"],strict=False  )
     diffusion.load_state_dict( saved_ckpt["diffusion"]  )
 
     return model, autoencoder, text_encoder, diffusion, config
@@ -478,7 +478,7 @@ if __name__ == "__main__":
     
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--folder", type=str,  default="visual", help="root folder for output")
+    parser.add_argument("--folder", type=str,  default="results", help="root folder for output")
     parser.add_argument('--ckpt', type=str, default='gligen_checkpoints/diffusion_pytorch_model.bin', help='path to the checkpoint')
 
     parser.add_argument("--batch_size", type=int, default=1, help="")
@@ -513,16 +513,20 @@ if __name__ == "__main__":
     models = load_ckpt(meta_list[0]["ckpt"])
     i=0
     while True:
-        user_input = input("Please enter the prompt (type 'quit' to stop): ")
+        """ user_input = input("Please enter the prompt (type 'quit' to stop): ")
         if user_input.lower() == 'quit':
             break
         else:
-            print("You entered: " + user_input)
+            print("You entered: " + user_input) """
+        input("Press to start the inference")
+        user_input="a cat and a dog"
         for meta in meta_list:
             pp = user_input
             meta["prompt"] = user_input
             text = user_input
-            o_names, o_boxes = generate_box_gpt4(text)
+            #o_names, o_boxes = generate_box_gpt4(text)
+            o_names=['cat','dog']
+            o_boxes=[(287, 140, 467, 335), (31, 97, 216, 286)]
             
                 
             #number of generated images for one prompt

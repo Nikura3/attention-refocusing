@@ -83,7 +83,7 @@ def generate_box_gpt4(inputs):
     name_objects = []
     boxes_of_object = []
     for b in boxes:
-        if b == '': continue
+        if b == '': continue # skip to the next iteration
         if not '(' in b: continue 
         b_split = b.split(":")
         name_objects.append(b_split[0])
