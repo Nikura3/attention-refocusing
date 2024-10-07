@@ -142,17 +142,16 @@ def draw_box(text, boxes,output_folder, img_name):
     image = Image.new('RGB', (width, height), 'gray')
     
     draw = ImageDraw.Draw(image)
-    font = ImageFont.truetype("Roboto-LightItalic.ttf", size=20)
     for i, box in enumerate(boxes):
         t = text[i]
         draw.rectangle([(box[0], box[1]),(box[2], box[3])], outline=128, width=2)
         mean_box_x, mean_box_y = int((box[0] + box[2] )/ 2) + int((box[1] + box[3] )/ 2)
-        draw.text((mean_box_x, mean_box_y), t, fill=200,font=font )
+        draw.text((mean_box_x, mean_box_y), t, fill=200)
     image.save(os.path.join(output_folder, img_name))
 
-def save_img(folder_name, img, prompt, iter_id, img_id):
+def save_img(folder_name, img, prompt):
     os.makedirs(folder_name, exist_ok=True)
-    img_name = str(img_id) + '_' + str(iter_id) + '_' + prompt.replace(' ','_')+'.jpg'
+    img_name = prompt.replace(' ','_')+'.jpg'
     img.save(os.path.join(folder_name, img_name))
 
 def load_gt(csv_pth):

@@ -15,7 +15,8 @@ import clip
 from scipy.io import loadmat
 from functools import partial
 import torchvision.transforms.functional as F
-import torchvision.transforms.functional as TF
+import torchvision.utils
+import torchvision.transforms.functional as tf
 import torchvision.transforms as transforms
 from chatGPT import read_txt_hrs, load_gt, load_box, save_img, read_csv, generate_box_gpt4, Pharse2idx_2, process_box_phrase, format_box, draw_box_2
 import torchvision.transforms as transforms
@@ -23,7 +24,6 @@ from pytorch_lightning import seed_everything
 from PIL import Image, ImageDraw, ImageFont
 from urllib.request import urlopen
 device = "cuda"
-
 
 def set_alpha_scale(model, alpha_scale):
     from ldm.modules.attention import GatedCrossAttentionDense, GatedSelfAttentionDense
@@ -193,7 +193,7 @@ def prepare_batch(meta, batch=1, max_objs=30):
 
 def crop_and_resize(image):
     crop_size = min(image.size)
-    image = TF.center_crop(image, crop_size)
+    image = tf.center_crop(image, crop_size)
     image = image.resize( (512, 512) )
     return image
 
@@ -324,7 +324,7 @@ def prepare_batch_sem(meta, batch=1):
     pil_to_tensor = transforms.PILToTensor()
 
     sem = Image.open( meta['sem']  ).convert("L") # semantic class index 0,1,2,3,4 in uint8 representation 
-    sem = TF.center_crop(sem, min(sem.size))
+    sem = tf.center_crop(sem, min(sem.size))
     sem = sem.resize( (512, 512), Image.NEAREST ) # acorrding to official, it is nearest by default, but I don't know why it can prodice new values if not specify explicitly
     try:
         sem_color = colorEncode(np.array(sem), loadmat('color150.mat')['colors'])
@@ -348,7 +348,7 @@ def prepare_batch_sem(meta, batch=1):
 
     # - - - - - prepare models - - - - - # 
 # @torch.no_grad()
-def run(meta,models,info_files, p, starting_noise=None,iter_id=0, img_id=0, save=True):
+def run(meta,models,info_files, p, starting_noise=None, seed=None):
     model, autoencoder, text_encoder, diffusion, config = models
 
     grounding_tokenizer_input = instantiate_from_config(config['grounding_tokenizer_input'])
@@ -441,60 +441,67 @@ def run(meta,models,info_files, p, starting_noise=None,iter_id=0, img_id=0, save
     with torch.no_grad():
         samples_fake = autoencoder.decode(samples_fake)
 
-
     # save images
-    if save :
-        path = meta["save_folder_name"]
-        output_folder1 = os.path.join( args.folder,  meta["save_folder_name"]+'_img')
-        os.makedirs( output_folder1, exist_ok=True)
-        output_folder2 = os.path.join( args.folder,  meta["save_folder_name"] + '_box')
-        os.makedirs( output_folder2, exist_ok=True)
-        start = len( os.listdir(output_folder2) )
-        image_ids = list(range(start,start+config.batch_size))
-        print(image_ids)
-        font = ImageFont.truetype("Roboto-LightItalic.ttf", size=20)
-        for image_id, sample in zip(image_ids, samples_fake):
-            img_name = meta['prompt'].replace(' ', '_') + str(int(image_id))+'.png'
-            sample = torch.clamp(sample, min=-1, max=1) * 0.5 + 0.5
-            sample = sample.cpu().numpy().transpose(1,2,0) * 255 
-            sample = Image.fromarray(sample.astype(np.uint8))
-            img2 = sample.copy()
-            draw = ImageDraw.Draw(sample)
-            boxes = meta['location_draw']
-            text = meta["phrases"]
-            info_files.update({img_name: (text, boxes)})
-            for i, box in enumerate(boxes):
-                t = text[i]
-
-                draw.rectangle([(box[0], box[1]),(box[2], box[3])], outline=128, width=2)
-                draw.text((box[0]+5, box[1]+5), t, fill=200,font=font )
-            save_img(output_folder2, sample,meta['prompt'],iter_id,img_id)
-            save_img(output_folder1,img2,meta['prompt'],iter_id ,img_id )
-    return samples_fake
-
-
-
-if __name__ == "__main__":
     
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--folder", type=str,  default="results", help="root folder for output")
-    parser.add_argument('--ckpt', type=str, default='gligen_checkpoints/diffusion_pytorch_model.bin', help='path to the checkpoint')
-
-    parser.add_argument("--batch_size", type=int, default=1, help="")
-    parser.add_argument("--no_plms", action='store_true', help="use DDIM instead. WARNING: I did not test the code yet")
-    parser.add_argument("--guidance_scale", type=float,  default=7.5, help="")
-    parser.add_argument("--negative_prompt", type=str,  default='longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality', help="")
-    # parser.add_argument("--negative_prompt", type=str,  default="cropped images", help="")
+    path = meta["save_folder_name"]
     
-    parser.add_argument("--file_save",default='output', type=str)
-    parser.add_argument("--layout",default='layout', type=str)
-    parser.add_argument("--loss_type", choices=['standard','SAR','CAR','SAR_CAR'],default='SAR_CAR', help='Choose one option among the four options for what types of losses ')
+    prompt_folder = os.path.join( args.folder,  meta["prompt"])
+    os.makedirs( prompt_folder, exist_ok=True)
     
-    args = parser.parse_args()
+    image=samples_fake[0]
+
+    #from tensor to pil
+    image = torch.clamp(image, min=-1, max=1) * 0.5 + 0.5
+    image = image.cpu().numpy().transpose(1,2,0) * 255 
+    image = Image.fromarray(image.astype(np.uint8))
+
+    """ output_folder2 = os.path.join( args.folder,  meta["save_folder_name"] + '_box')
+    os.makedirs( output_folder2, exist_ok=True) """
     
+    """ start = len( os.listdir(output_folder2) )
+    image_ids = list(range(start,start+config.batch_size))
+    print(image_ids) """
+    
+    """ for image in samples_fake:
+        #from tensor to pil
+        image = torch.clamp(image, min=-1, max=1) * 0.5 + 0.5
+        image = image.cpu().numpy().transpose(1,2,0) * 255 
+        image = Image.fromarray(image.astype(np.uint8))
 
+        #image.save(prompt_output_path / f'{seed}.png')
+        image.save(os.path.join(prompt_folder, str(seed)+".jpg" ))
+        #list of tensors
+        gen_images.append(tf.pil_to_tensor(image))
 
+        #draw the bounding boxes
+        image=torchvision.utils.draw_bounding_boxes(tf.pil_to_tensor(image),torch.Tensor(meta['location_draw']),labels=meta['phrases'],colors=['blue', 'red', 'purple', 'orange', 'green', 'yellow', 'black', 'gray', 'white'],width=4)
+        #list of tensors
+        gen_bboxes_images.append(image)
+        tf.to_pil_image(image).save(os.path.join(prompt_folder,str(seed)+"_bboxes.png")) """
+    return image
+""" 
+    for image_id, sample in zip(image_ids, samples_fake):
+        img_name = meta['prompt'].replace(' ', '_') +'.png'
+
+        #from tensor to pil (taken from diffusers)
+        sample = torch.clamp(sample, min=-1, max=1) * 0.5 + 0.5
+        sample = sample.cpu().numpy().transpose(1,2,0) * 255 
+        sample = Image.fromarray(sample.astype(np.uint8))
+        
+        img2 = sample.copy()
+        draw = ImageDraw.Draw(sample)
+        boxes = meta['location_draw']
+        text = meta["phrases"]
+        info_files.update({img_name: (text, boxes)})
+        for i, box in enumerate(boxes):
+            t = text[i]
+
+            draw.rectangle([(box[0], box[1]),(box[2], box[3])], outline=128, width=2)
+            draw.text((box[0]+5, box[1]+5), t, fill=200)
+        save_img(output_folder2, sample,meta['prompt'])
+        save_img(output_folder1,img2,meta['prompt']) """
+
+def main():
     meta_list = [ 
 
         # - - - - - - - - GLIGEN on text grounding for generation - - - - - - - - # 
@@ -511,49 +518,98 @@ if __name__ == "__main__":
     
     info_files = {}
     models = load_ckpt(meta_list[0]["ckpt"])
-    i=0
-    while True:
-        """ user_input = input("Please enter the prompt (type 'quit' to stop): ")
-        if user_input.lower() == 'quit':
-            break
-        else:
-            print("You entered: " + user_input) """
-        input("Press to start the inference")
-        user_input="a cat and a dog"
-        for meta in meta_list:
-            pp = user_input
-            meta["prompt"] = user_input
-            text = user_input
-            #o_names, o_boxes = generate_box_gpt4(text)
-            o_names=['cat','dog']
-            o_boxes=[(287, 140, 467, 335), (31, 97, 216, 286)]
+    
+    prompt="a cat and a dog"
+    seeds = range(1,5)
+
+    gen_images=[]
+    gen_bboxes_images=[]
+
+    meta_list[0]['prompt']=prompt
+
+    user_input="a cat and a dog"
+    for meta in meta_list:
+        pp = user_input
+        meta["prompt"] = user_input
+        text = user_input
+        #o_names, o_boxes = generate_box_gpt4(text)
+        o_names=['cat','dog']
+        o_boxes=[(287, 140, 467, 335), (31, 97, 216, 286)]
+        
             
-                
-            #number of generated images for one prompt
-            for k in range(1):
-                starting_noise = torch.randn(args.batch_size, 4, 64, 64).to(device) 
-                p, ll  = format_box(o_names, o_boxes)
-                l = np.array(o_boxes)
-                name_box = process_box_phrase(o_names, o_boxes)
-                #generate format box and positions for losses
-                position, box_att = Pharse2idx_2(pp, name_box)
-                #save layout
-                layout_folder = args.layout
-                os.makedirs( layout_folder, exist_ok=True)
-                draw_box_2(o_names, box_att ,layout_folder,str(i) + '_' +meta["prompt"].replace(' ',"_") + '.jpg' )
-                print('position', position )
-                # phrase
-                meta["phrases"] = p
-                # location integer to visual box
-                meta['location_draw'] = l
-                #location scale, the input GLIGEN
-                meta["locations"] = l/512
-                # the box format using for CAR and SAR loss
-                meta['ll'] = box_att
-                # the locations of words which out of GPT4, label of boxes
-                meta['position'] = position
-                run(meta, models, info_files, args, starting_noise, k,i)
-        i += 1
+        #number of generated images for one prompt
+        for seed in seeds:
+            print("Seed:",seed)
+            if torch.cuda.is_available():
+                g = torch.Generator('cuda').manual_seed(seed)
+            else:
+                g = torch.Generator('cpu').manual_seed(seed)
+
+            starting_noise = torch.randn(args.batch_size, 4, 64, 64, generator=g, device=device) 
+
+            p, ll  = format_box(o_names, o_boxes)
+            l = np.array(o_boxes)
+            name_box = process_box_phrase(o_names, o_boxes)
+            #generate format box and positions for losses
+            position, box_att = Pharse2idx_2(pp, name_box)
+
+            """ os.makedirs( layout_folder, exist_ok=True)
+            draw_box_2(o_names, box_att ,layout_folder,meta["prompt"].replace(' ',"_") + '.jpg' ) """
+            
+            print('position', position )
+            # phrase
+            meta["phrases"] = p
+            # location integer to visual box
+            meta['location_draw'] = l
+            #location scale, the input GLIGEN
+            meta["locations"] = l/512
+            # the box format using for CAR and SAR loss
+            meta['ll'] = box_att
+            # the locations of words which out of GPT4, label of boxes
+            meta['position'] = position
+            
+            image = run(meta, models, info_files, args, starting_noise, seed)
+
+            #image.save(prompt_output_path / f'{seed}.png')
+            image.save(os.path.join(meta['save_folder_name'],meta['prompt'], str(seed)+".jpg" ))
+            #list of tensors
+            gen_images.append(tf.pil_to_tensor(image))
+
+            #draw the bounding boxes
+            image=torchvision.utils.draw_bounding_boxes(tf.pil_to_tensor(image),torch.Tensor(meta['location_draw']),labels=meta['phrases'],colors=['blue', 'red', 'purple', 'orange', 'green', 'yellow', 'black', 'gray', 'white'],width=4)
+            #list of tensors
+            gen_bboxes_images.append(image)
+            tf.to_pil_image(image).save(os.path.join(meta['save_folder_name'],meta['prompt'],str(seed)+"_bboxes.png"))
+        
+        # save a grid of results across all seeds without bboxes
+    tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_images,nrow=4,padding=0)).save(os.path.join(meta['save_folder_name'],meta['prompt'],meta['prompt']+".png"))
+    #joined_image = vis_utils.get_image_grid(gen_images)
+    #joined_image.save(str(config.output_path) +"/"+ config.prompt + ".png")
+
+    # save a grid of results across all seeds with bboxes
+    tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_bboxes_images,nrow=4,padding=0)).save(os.path.join(meta['save_folder_name'],meta['prompt'],meta['prompt']+"_bboxes.png"))
+    #joined_image = vis_utils.get_image_grid(gen_bboxes_images)
+    #joined_image.save(str(config.output_path) +"/"+ config.prompt + "_bboxes.png")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--folder", type=str,  default="results", help="root folder for output")
+    parser.add_argument('--ckpt', type=str, default='gligen_checkpoints/diffusion_pytorch_model.bin', help='path to the checkpoint')
+
+    parser.add_argument("--batch_size", type=int, default=1, help="")
+    parser.add_argument("--no_plms", action='store_true', help="use DDIM instead. WARNING: I did not test the code yet")
+    parser.add_argument("--guidance_scale", type=float,  default=7.5, help="")
+    parser.add_argument("--negative_prompt", type=str,  default='longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality', help="")
+    # parser.add_argument("--negative_prompt", type=str,  default="cropped images", help="")
+    
+    parser.add_argument("--file_save",default='results', type=str)
+    parser.add_argument("--layout",default='layout', type=str)
+    parser.add_argument("--loss_type", choices=['standard','SAR','CAR','SAR_CAR'],default='SAR_CAR', help='Choose one option among the four options for what types of losses ')
+    
+    args = parser.parse_args()
+
+    main()
                 
 
 
