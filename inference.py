@@ -18,7 +18,8 @@ import torchvision.transforms.functional as F
 import torchvision.utils
 import torchvision.transforms.functional as tf
 import torchvision.transforms as transforms
-from chatGPT import read_txt_hrs, load_gt, load_box, save_img, read_csv, generate_box_gpt4, Pharse2idx_2, process_box_phrase, format_box, draw_box_2
+#from chatGPT import read_txt_hrs, load_gt, load_box, save_img, read_csv, generate_box_gpt4, Pharse2idx_2, process_box_phrase, format_box, draw_box_2
+from utils.preprocess_input import Pharse2idx_2, process_box_phrase, format_box
 import torchvision.transforms as transforms
 from pytorch_lightning import seed_everything
 from PIL import Image, ImageDraw, ImageFont
@@ -88,9 +89,6 @@ def load_ckpt(ckpt_path):
     diffusion.load_state_dict( saved_ckpt["diffusion"]  )
 
     return model, autoencoder, text_encoder, diffusion, config
-
-
-
 
 def project(x, projection_matrix):
     """
@@ -342,13 +340,11 @@ def prepare_batch_sem(meta, batch=1):
     return batch_to_device(out, device) 
 
 
-
-
 # def run(meta, config, starting_noise=None):
 
     # - - - - - prepare models - - - - - # 
 # @torch.no_grad()
-def run(meta,models,info_files, p, starting_noise=None, seed=None):
+def run(meta,models,info_files, p, starting_noise=None, generator=None):
     model, autoencoder, text_encoder, diffusion, config = models
 
     grounding_tokenizer_input = instantiate_from_config(config['grounding_tokenizer_input'])
@@ -545,7 +541,7 @@ def main():
             else:
                 g = torch.Generator('cpu').manual_seed(seed)
 
-            starting_noise = torch.randn(args.batch_size, 4, 64, 64, generator=g, device=device) 
+            starting_noise = torch.randn(args.batch_size, 4, 64, 64, generator=g,device=device) 
 
             p, ll  = format_box(o_names, o_boxes)
             l = np.array(o_boxes)
@@ -555,7 +551,7 @@ def main():
 
             """ os.makedirs( layout_folder, exist_ok=True)
             draw_box_2(o_names, box_att ,layout_folder,meta["prompt"].replace(' ',"_") + '.jpg' ) """
-            
+
             print('position', position )
             # phrase
             meta["phrases"] = p
@@ -568,7 +564,7 @@ def main():
             # the locations of words which out of GPT4, label of boxes
             meta['position'] = position
             
-            image = run(meta, models, info_files, args, starting_noise, seed)
+            image = run(meta, models, info_files, args, starting_noise, generator=g)
 
             #image.save(prompt_output_path / f'{seed}.png')
             image.save(os.path.join(meta['save_folder_name'],meta['prompt'], str(seed)+".jpg" ))
@@ -610,7 +606,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main()
-                
-
-
-
