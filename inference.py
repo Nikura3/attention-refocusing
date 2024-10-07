@@ -1,7 +1,11 @@
+import time
 import argparse
 from PIL import Image, ImageDraw
 from omegaconf import OmegaConf
 from ldm.models.diffusion.ddim import DDIMSampler
+
+from utils import logger
+
 from ldm.models.diffusion.plms import PLMSSampler
 import os 
 from transformers import CLIPProcessor, CLIPModel
@@ -18,7 +22,6 @@ import torchvision.transforms.functional as F
 import torchvision.utils
 import torchvision.transforms.functional as tf
 import torchvision.transforms as transforms
-#from chatGPT import read_txt_hrs, load_gt, load_box, save_img, read_csv, generate_box_gpt4, Pharse2idx_2, process_box_phrase, format_box, draw_box_2
 from utils.preprocess_input import Pharse2idx_2, process_box_phrase, format_box
 import torchvision.transforms as transforms
 from pytorch_lightning import seed_everything
@@ -517,13 +520,17 @@ def main():
     
     prompt="a cat and a dog"
     seeds = range(1,5)
+    meta_list[0]['prompt']=prompt
+    
+    user_input="a cat and a dog"
+
+    output_path=os.path.join(meta_list[0]['save_folder_name'],meta_list[0]['prompt'])
+    #intialize logger
+    log=logger.Logger(output_path)
 
     gen_images=[]
     gen_bboxes_images=[]
 
-    meta_list[0]['prompt']=prompt
-
-    user_input="a cat and a dog"
     for meta in meta_list:
         pp = user_input
         meta["prompt"] = user_input
@@ -535,7 +542,11 @@ def main():
             
         #number of generated images for one prompt
         for seed in seeds:
-            print("Seed:",seed)
+            print(f"Current seed is : {seed}")
+
+            #start stopwatch
+            start=time.time()
+
             if torch.cuda.is_available():
                 g = torch.Generator('cuda').manual_seed(seed)
             else:
@@ -566,6 +577,11 @@ def main():
             
             image = run(meta, models, info_files, args, starting_noise, generator=g)
 
+            #end stopwatch
+            end = time.time()
+            #save to logger
+            log.log_time_run(start,end)
+
             #image.save(prompt_output_path / f'{seed}.png')
             image.save(os.path.join(meta['save_folder_name'],meta['prompt'], str(seed)+".jpg" ))
             #list of tensors
@@ -577,15 +593,20 @@ def main():
             gen_bboxes_images.append(image)
             tf.to_pil_image(image).save(os.path.join(meta['save_folder_name'],meta['prompt'],str(seed)+"_bboxes.png"))
         
+        #log gpu stats
+        log.log_gpu_memory_instance()
+        #save to csv_file
+        log.save_log_to_csv(meta['prompt'])
+        
         # save a grid of results across all seeds without bboxes
-    tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_images,nrow=4,padding=0)).save(os.path.join(meta['save_folder_name'],meta['prompt'],meta['prompt']+".png"))
-    #joined_image = vis_utils.get_image_grid(gen_images)
-    #joined_image.save(str(config.output_path) +"/"+ config.prompt + ".png")
+        tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_images,nrow=4,padding=0)).save(os.path.join(meta['save_folder_name'],meta['prompt'],meta['prompt']+".png"))
+        #joined_image = vis_utils.get_image_grid(gen_images)
+        #joined_image.save(str(config.output_path) +"/"+ config.prompt + ".png")
 
-    # save a grid of results across all seeds with bboxes
-    tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_bboxes_images,nrow=4,padding=0)).save(os.path.join(meta['save_folder_name'],meta['prompt'],meta['prompt']+"_bboxes.png"))
-    #joined_image = vis_utils.get_image_grid(gen_bboxes_images)
-    #joined_image.save(str(config.output_path) +"/"+ config.prompt + "_bboxes.png")
+        # save a grid of results across all seeds with bboxes
+        tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_bboxes_images,nrow=4,padding=0)).save(os.path.join(meta['save_folder_name'],meta['prompt'],meta['prompt']+"_bboxes.png"))
+        #joined_image = vis_utils.get_image_grid(gen_bboxes_images)
+        #joined_image.save(str(config.output_path) +"/"+ config.prompt + "_bboxes.png")
 
 
 if __name__ == "__main__":
