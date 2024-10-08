@@ -510,14 +510,18 @@ def run(sample,models, p, starting_noise=None, generator=None):
     # - - - - - start sampling - - - - - #
     shape = (config.batch_size, model.in_channels, model.image_size, model.image_size)
 
-    samples_fake = sampler.sample(S=steps, shape=shape, input=input,  uc=uc, guidance_scale=config.guidance_scale, mask=inpainting_mask, x0=z0, loss_type=args.loss_type)
+    samples_fake = sampler.sample(
+        S=steps, 
+        shape=shape, 
+        input=input, 
+        uc=uc, 
+        guidance_scale=config.guidance_scale, 
+        mask=inpainting_mask, 
+        x0=z0, 
+        loss_type=args.loss_type)
+    
     with torch.no_grad():
         samples_fake = autoencoder.decode(samples_fake)
-
-    # save images
-    
-    prompt_folder = os.path.join( args.folder,  sample["prompt"])
-    os.makedirs( prompt_folder, exist_ok=True)
     
     image=samples_fake[0]
 
@@ -583,7 +587,7 @@ def main():
     bench = make_QBench()
 
     model_name="AR"
-    seeds = range(1,5)
+    seeds = range(1,16)
     models = load_ckpt(bench[0]["ckpt"])
 
     gen_images=[]
@@ -600,7 +604,6 @@ def main():
         log=logger.Logger(output_path)
 
         print("Sample number ",sample_to_generate)
-        torch.cuda.empty_cache()
 
         o_names=bench[sample_to_generate]["phrases"]
         o_boxes=bench[sample_to_generate]["o_boxes"]
@@ -639,9 +642,11 @@ def main():
 
             starting_noise = torch.randn(args.batch_size, 4, 64, 64, generator=g,device=device) 
 
+            torch.cuda.empty_cache()
+
             #start stopwatch
-            start=time.time()
-            
+            start=time.time()            
+
             image = run(bench[sample_to_generate], models, args, starting_noise, generator=g)
 
             #end stopwatch
