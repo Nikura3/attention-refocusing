@@ -29,6 +29,80 @@ from PIL import Image, ImageDraw, ImageFont
 from urllib.request import urlopen
 device = "cuda"
 
+def make_QBench():
+    prompts = ["A bus", #0
+               "A bus and a bench", #1
+               "A bus next to a bench and a bird", #2
+               "A bus next to a bench with a bird and a pizza", #3
+               "A green bus", #4
+               "A green bus and a red bench", #5
+               "A green bus next to a red bench and a pink bird", #6
+               "A green bus next to a red bench with a pink bird and a yellow pizza", #7
+               "A bus on the left of a bench", #8
+               "A bus on the left of a bench and a bird", #9
+               "A bus and a pizza on the left of a bench and a bird", #10
+               "A bus and a pizza on the left of a bench and below a bird", #11
+               ]
+    
+
+    bbox = [[[2,121,251,460]],#0
+            [[2,121,251,460], [274,345,503,496]],#1
+            [[2,121,251,460], [274,345,503,496],[344,32,500,187]],#2
+            [[2,121,251,460], [274,345,503,496],[344,32,500,187],[58,327,187,403]],#3
+            [[2,121,251,460]],#4
+            [[2,121,251,460], [274,345,503,496]],#5
+            [[2,121,251,460], [274,345,503,496],[344,32,500,187]],#6
+            [[2,121,251,460], [274,345,503,496],[344,32,500,187],[58,327,187,403]],#7
+            [[2,121,251,460],[274,345,503,496]],#8
+            [[2,121,251,460],[274,345,503,496],[344,32,500,187]],#9
+            [[2,121,251,460], [58,327,187,403], [274,345,503,496],[344,32,500,187]],#10
+            [[2,121,251,460], [58,327,187,403], [274,345,503,496],[344,32,500,187]],#11
+            ]
+
+    phrases = [["bus"],#0
+               ["bus", "bench"],#1
+               ["bus", "bench", "bird"],#2
+               ["bus","bench","bird","pizza"],#3
+               ["bus"],#4
+               ["bus", "bench"],#5
+               ["bus", "bench", "bird"],#6
+               ["bus","bench","bird","pizza"],#7
+               ["bus","bench"],#8
+               ["bus","bench","bird"],#9
+               ["bus","pizza","bench","bird"],#11
+               ["bus","pizza","bench","bird"]#12
+               ]
+
+    token_indices = [[2],#0
+                     [2,5],#1
+                     [2, 6, 9],#2
+                     [2,6,9,12],#3
+                     [3],#4
+                     [3,7],#5
+                     [3,8,12],#6
+                     [3,8,12,16],#7
+                     [2,8],#8
+                     [2,8,11],#9
+                     [2,5,11,14],#10
+                     [2,5,11,15],#11
+                     ]
+
+    o_boxes=convert_to_o_boxes(bbox)
+    
+    data_dict = {
+    i: {
+        "ckpt":"gligen_checkpoints/diffusion_pytorch_model.bin",
+        "prompt": prompts[i],
+        "o_boxes":o_boxes[i],
+        "locations": None,
+        "phrases": phrases[i],
+        "alpha_type":[0.3,0.0,0.7],
+        "ll":None
+    }
+    for i in range(len(prompts))
+    }
+    return data_dict
+
 def set_alpha_scale(model, alpha_scale):
     from ldm.modules.attention import GatedCrossAttentionDense, GatedSelfAttentionDense
     for module in model.modules():
@@ -148,8 +222,8 @@ def complete_mask(has_mask, max_objs):
 
 
 @torch.no_grad()
-def prepare_batch(meta, batch=1, max_objs=30):
-    phrases, images = meta.get("phrases"), meta.get("images")
+def prepare_batch(sample, batch=1, max_objs=30):
+    phrases, images = sample.get("phrases"), sample.get("images")
     images = [None]*len(phrases) if images==None else images 
     phrases = [None]*len(images) if phrases==None else phrases 
 
@@ -170,7 +244,7 @@ def prepare_batch(meta, batch=1, max_objs=30):
         text_features.append(  get_clip_feature(model, processor, phrase, is_image=False) )
         image_features.append( get_clip_feature(model, processor, image,  is_image=True) )
 
-    for idx, (box, text_feature, image_feature) in enumerate(zip( meta['locations'], text_features, image_features)):
+    for idx, (box, text_feature, image_feature) in enumerate(zip( sample['locations'], text_features, image_features)):
         boxes[idx] = torch.tensor(box)
         masks[idx] = 1
         if text_feature is not None:
@@ -183,8 +257,8 @@ def prepare_batch(meta, batch=1, max_objs=30):
     out = {
         "boxes" : boxes.unsqueeze(0).repeat(batch,1,1),
         "masks" : masks.unsqueeze(0).repeat(batch,1),
-        "text_masks" : text_masks.unsqueeze(0).repeat(batch,1)*complete_mask( meta.get("text_mask"), max_objs ),
-        "image_masks" : image_masks.unsqueeze(0).repeat(batch,1)*complete_mask( meta.get("image_mask"), max_objs ),
+        "text_masks" : text_masks.unsqueeze(0).repeat(batch,1)*complete_mask( sample.get("text_mask"), max_objs ),
+        "image_masks" : image_masks.unsqueeze(0).repeat(batch,1)*complete_mask( sample.get("image_mask"), max_objs ),
         "text_embeddings"  : text_embeddings.unsqueeze(0).repeat(batch,1,1),
         "image_embeddings" : image_embeddings.unsqueeze(0).repeat(batch,1,1)
     }
@@ -201,11 +275,11 @@ def crop_and_resize(image):
 
 
 @torch.no_grad()
-def prepare_batch_kp(meta, batch=1, max_persons_per_image=8):
+def prepare_batch_kp(sample, batch=1, max_persons_per_image=8):
     
     points = torch.zeros(max_persons_per_image*17,2)
     idx = 0 
-    for this_person_kp in meta["locations"]:
+    for this_person_kp in sample["locations"]:
         for kp in this_person_kp:
             points[idx,0] = kp[0]
             points[idx,1] = kp[1]
@@ -224,11 +298,11 @@ def prepare_batch_kp(meta, batch=1, max_persons_per_image=8):
 
 
 @torch.no_grad()
-def prepare_batch_hed(meta, batch=1):
+def prepare_batch_hed(sample, batch=1):
     
     pil_to_tensor = transforms.PILToTensor()
 
-    hed_edge = Image.open(meta['hed_image']).convert("RGB")
+    hed_edge = Image.open(sample['hed_image']).convert("RGB")
     hed_edge = crop_and_resize(hed_edge)
     hed_edge = ( pil_to_tensor(hed_edge).float()/255 - 0.5 ) / 0.5
 
@@ -240,7 +314,7 @@ def prepare_batch_hed(meta, batch=1):
 
 
 @torch.no_grad()
-def prepare_batch_canny(meta, batch=1):
+def prepare_batch_canny(sample, batch=1):
     """ 
     The canny edge is very sensitive since I set a fixed canny hyperparamters; 
     Try to use the same setting to get edge 
@@ -253,7 +327,7 @@ def prepare_batch_canny(meta, batch=1):
     
     pil_to_tensor = transforms.PILToTensor()
 
-    canny_edge = Image.open(meta['canny_image']).convert("RGB")
+    canny_edge = Image.open(sample['canny_image']).convert("RGB")
     canny_edge = crop_and_resize(canny_edge)
 
     canny_edge = ( pil_to_tensor(canny_edge).float()/255 - 0.5 ) / 0.5
@@ -266,11 +340,11 @@ def prepare_batch_canny(meta, batch=1):
 
 
 @torch.no_grad()
-def prepare_batch_depth(meta, batch=1):
+def prepare_batch_depth(sample, batch=1):
     
     pil_to_tensor = transforms.PILToTensor()
 
-    depth = Image.open(meta['depth']).convert("RGB")
+    depth = Image.open(sample['depth']).convert("RGB")
     depth = crop_and_resize(depth)
     depth = ( pil_to_tensor(depth).float()/255 - 0.5 ) / 0.5
 
@@ -283,7 +357,7 @@ def prepare_batch_depth(meta, batch=1):
 
 
 @torch.no_grad()
-def prepare_batch_normal(meta, batch=1):
+def prepare_batch_normal(sample, batch=1):
     """
     We only train normal model on the DIODE dataset which only has a few scene.
 
@@ -291,7 +365,7 @@ def prepare_batch_normal(meta, batch=1):
     
     pil_to_tensor = transforms.PILToTensor()
 
-    normal = Image.open(meta['normal']).convert("RGB")
+    normal = Image.open(sample['normal']).convert("RGB")
     normal = crop_and_resize(normal)
     normal = ( pil_to_tensor(normal).float()/255 - 0.5 ) / 0.5
 
@@ -320,11 +394,11 @@ def colorEncode(labelmap, colors):
     return labelmap_rgb
 
 @torch.no_grad()
-def prepare_batch_sem(meta, batch=1):
+def prepare_batch_sem(sample, batch=1):
 
     pil_to_tensor = transforms.PILToTensor()
 
-    sem = Image.open( meta['sem']  ).convert("L") # semantic class index 0,1,2,3,4 in uint8 representation 
+    sem = Image.open( sample['sem']  ).convert("L") # semantic class index 0,1,2,3,4 in uint8 representation 
     sem = tf.center_crop(sem, min(sem.size))
     sem = sem.resize( (512, 512), Image.NEAREST ) # acorrding to official, it is nearest by default, but I don't know why it can prodice new values if not specify explicitly
     try:
@@ -343,11 +417,11 @@ def prepare_batch_sem(meta, batch=1):
     return batch_to_device(out, device) 
 
 
-# def run(meta, config, starting_noise=None):
+# def run(sample, config, starting_noise=None):
 
     # - - - - - prepare models - - - - - # 
 # @torch.no_grad()
-def run(meta,models,info_files, p, starting_noise=None, generator=None):
+def run(sample,models, p, starting_noise=None, generator=None):
     model, autoencoder, text_encoder, diffusion, config = models
 
     grounding_tokenizer_input = instantiate_from_config(config['grounding_tokenizer_input'])
@@ -365,21 +439,21 @@ def run(meta,models,info_files, p, starting_noise=None, generator=None):
 
 
     # - - - - - prepare batch - - - - - #
-    if "keypoint" in meta["ckpt"]:
-        batch = prepare_batch_kp(meta, config.batch_size)
-    elif "hed" in meta["ckpt"]:
-        batch = prepare_batch_hed(meta, config.batch_size)
-    elif "canny" in meta["ckpt"]:
-        batch = prepare_batch_canny(meta, config.batch_size)
-    elif "depth" in meta["ckpt"]:
-        batch = prepare_batch_depth(meta, config.batch_size)
-    elif "normal" in meta["ckpt"]:
-        batch = prepare_batch_normal(meta, config.batch_size)
-    elif "sem" in meta["ckpt"]:
-        batch = prepare_batch_sem(meta, config.batch_size)
+    if "keypoint" in sample["ckpt"]:
+        batch = prepare_batch_kp(sample, config.batch_size)
+    elif "hed" in sample["ckpt"]:
+        batch = prepare_batch_hed(sample, config.batch_size)
+    elif "canny" in sample["ckpt"]:
+        batch = prepare_batch_canny(sample, config.batch_size)
+    elif "depth" in sample["ckpt"]:
+        batch = prepare_batch_depth(sample, config.batch_size)
+    elif "normal" in sample["ckpt"]:
+        batch = prepare_batch_normal(sample, config.batch_size)
+    elif "sem" in sample["ckpt"]:
+        batch = prepare_batch_sem(sample, config.batch_size)
     else:
-        batch = prepare_batch(meta, config.batch_size)
-    context = text_encoder.encode(  [meta["prompt"]]*config.batch_size  )
+        batch = prepare_batch(sample, config.batch_size)
+    context = text_encoder.encode(  [sample["prompt"]]*config.batch_size  )
     uc = text_encoder.encode( config.batch_size*[""] )
     with torch.no_grad():
         if args.negative_prompt is not None:
@@ -387,7 +461,7 @@ def run(meta,models,info_files, p, starting_noise=None, generator=None):
 
 
     # - - - - - sampler - - - - - # 
-    alpha_generator_func = partial(alpha_generator, type=meta.get("alpha_type"))
+    alpha_generator_func = partial(alpha_generator, type=sample.get("alpha_type"))
     if config.no_plms:
         sampler = DDIMSampler(diffusion, model, alpha_generator_func=alpha_generator_func, set_alpha_scale=set_alpha_scale)
         steps = 250 
@@ -399,13 +473,13 @@ def run(meta,models,info_files, p, starting_noise=None, generator=None):
     # - - - - - inpainting related - - - - - #
     inpainting_mask = z0 = None  # used for replacing known region in diffusion process
     inpainting_extra_input = None # used as model input 
-    if "input_image" in meta:
+    if "input_image" in sample:
         # inpaint mode 
         assert config.inpaint_mode, 'input_image is given, the ckpt must be the inpaint model, are you using the correct ckpt?'
         
         inpainting_mask = draw_masks_from_boxes( batch['boxes'], model.image_size  ).cuda()
         
-        input_image = F.pil_to_tensor( Image.open(meta["input_image"]).convert("RGB").resize((512,512)) ) 
+        input_image = F.pil_to_tensor( Image.open(sample["input_image"]).convert("RGB").resize((512,512)) ) 
         input_image = ( input_image.float().unsqueeze(0).cuda() / 255 - 0.5 ) / 0.5
         z0 = autoencoder.encode( input_image )
         
@@ -427,8 +501,8 @@ def run(meta,models,info_files, p, starting_noise=None, generator=None):
                 grounding_input = grounding_input,
                 inpainting_extra_input = inpainting_extra_input,
                 grounding_extra_input = grounding_extra_input,
-                boxes=meta['ll'],
-                object_position = meta['position']
+                boxes=sample['ll'],
+                object_position = sample['position']
 
             )
 
@@ -442,9 +516,7 @@ def run(meta,models,info_files, p, starting_noise=None, generator=None):
 
     # save images
     
-    path = meta["save_folder_name"]
-    
-    prompt_folder = os.path.join( args.folder,  meta["prompt"])
+    prompt_folder = os.path.join( args.folder,  sample["prompt"])
     os.makedirs( prompt_folder, exist_ok=True)
     
     image=samples_fake[0]
@@ -454,7 +526,7 @@ def run(meta,models,info_files, p, starting_noise=None, generator=None):
     image = image.cpu().numpy().transpose(1,2,0) * 255 
     image = Image.fromarray(image.astype(np.uint8))
 
-    """ output_folder2 = os.path.join( args.folder,  meta["save_folder_name"] + '_box')
+    """ output_folder2 = os.path.join( args.folder,  sample["save_folder_name"] + '_box')
     os.makedirs( output_folder2, exist_ok=True) """
     
     """ start = len( os.listdir(output_folder2) )
@@ -473,14 +545,14 @@ def run(meta,models,info_files, p, starting_noise=None, generator=None):
         gen_images.append(tf.pil_to_tensor(image))
 
         #draw the bounding boxes
-        image=torchvision.utils.draw_bounding_boxes(tf.pil_to_tensor(image),torch.Tensor(meta['location_draw']),labels=meta['phrases'],colors=['blue', 'red', 'purple', 'orange', 'green', 'yellow', 'black', 'gray', 'white'],width=4)
+        image=torchvision.utils.draw_bounding_boxes(tf.pil_to_tensor(image),torch.Tensor(sample['location_draw']),labels=sample['phrases'],colors=['blue', 'red', 'purple', 'orange', 'green', 'yellow', 'black', 'gray', 'white'],width=4)
         #list of tensors
         gen_bboxes_images.append(image)
         tf.to_pil_image(image).save(os.path.join(prompt_folder,str(seed)+"_bboxes.png")) """
     return image
 """ 
     for image_id, sample in zip(image_ids, samples_fake):
-        img_name = meta['prompt'].replace(' ', '_') +'.png'
+        img_name = sample['prompt'].replace(' ', '_') +'.png'
 
         #from tensor to pil (taken from diffusers)
         sample = torch.clamp(sample, min=-1, max=1) * 0.5 + 0.5
@@ -489,63 +561,76 @@ def run(meta,models,info_files, p, starting_noise=None, generator=None):
         
         img2 = sample.copy()
         draw = ImageDraw.Draw(sample)
-        boxes = meta['location_draw']
-        text = meta["phrases"]
+        boxes = sample['location_draw']
+        text = sample["phrases"]
         info_files.update({img_name: (text, boxes)})
         for i, box in enumerate(boxes):
             t = text[i]
 
             draw.rectangle([(box[0], box[1]),(box[2], box[3])], outline=128, width=2)
             draw.text((box[0]+5, box[1]+5), t, fill=200)
-        save_img(output_folder2, sample,meta['prompt'])
-        save_img(output_folder1,img2,meta['prompt']) """
+        save_img(output_folder2, sample,sample['prompt'])
+        save_img(output_folder1,img2,sample['prompt']) """
+
+def convert_to_o_boxes(bboxes):
+    for i,b in enumerate(bboxes):
+        temp = tuple(b)
+        bboxes[i]=temp
+    return bboxes
+
 
 def main():
-    meta_list = [ 
+    bench = make_QBench()
 
-        # - - - - - - - - GLIGEN on text grounding for generation - - - - - - - - # 
-        dict(
-            ckpt = args.ckpt,
-            prompt =None,
-            phrases = None,
-            locations = None,
-            alpha_type = [0.3, 0.0, 0.7],
-            save_folder_name=args.file_save,
-            ll = None
-        )
-    ]
-    
-    info_files = {}
-    models = load_ckpt(meta_list[0]["ckpt"])
-    
-    prompt="a cat and a dog"
+    model_name="AR"
     seeds = range(1,5)
-    meta_list[0]['prompt']=prompt
-    
-    user_input="a cat and a dog"
-
-    output_path=os.path.join(meta_list[0]['save_folder_name'],meta_list[0]['prompt'])
-    #intialize logger
-    log=logger.Logger(output_path)
+    models = load_ckpt(bench[0]["ckpt"])
 
     gen_images=[]
     gen_bboxes_images=[]
 
-    for meta in meta_list:
-        pp = user_input
-        meta["prompt"] = user_input
-        text = user_input
-        #o_names, o_boxes = generate_box_gpt4(text)
-        o_names=['cat','dog']
-        o_boxes=[(287, 140, 467, 335), (31, 97, 216, 286)]
+    for sample_to_generate in range(0,len(bench)):
+
+        output_path = os.path.join("results",model_name, bench[sample_to_generate]['prompt'])
+
+        if (not os.path.isdir(output_path)):
+            os.makedirs(output_path)
+
+        #intialize logger
+        log=logger.Logger(output_path)
+
+        print("Sample number ",sample_to_generate)
+        torch.cuda.empty_cache()
+
+        o_names=bench[sample_to_generate]["phrases"]
+        o_boxes=bench[sample_to_generate]["o_boxes"]
+
+        
+        p, ll  = format_box(o_names, o_boxes)
+        l = np.array(o_boxes)
+        name_box = process_box_phrase(o_names, o_boxes)
+        #generate format box and positions for losses
+        position, box_att = Pharse2idx_2(bench[sample_to_generate]['prompt'], name_box)
+
+        """ os.makedirs( layout_folder, exist_ok=True)
+        draw_box_2(o_names, box_att ,layout_folder,sample["prompt"].replace(' ',"_") + '.jpg' ) """
+
+        print('position', position )
+        # phrase
+        bench[sample_to_generate]['phrases'] = p
+        # location integer to visual box
+        bench[sample_to_generate]['location_draw'] = l
+        #location scale, the input GLIGEN
+        bench[sample_to_generate]["locations"] = l/512
+        # the box format using for CAR and SAR loss
+        bench[sample_to_generate]['ll'] = box_att
+        # the locations of words which out of GPT4, label of boxes
+        bench[sample_to_generate]['position'] = position
         
             
         #number of generated images for one prompt
         for seed in seeds:
             print(f"Current seed is : {seed}")
-
-            #start stopwatch
-            start=time.time()
 
             if torch.cuda.is_available():
                 g = torch.Generator('cuda').manual_seed(seed)
@@ -554,28 +639,10 @@ def main():
 
             starting_noise = torch.randn(args.batch_size, 4, 64, 64, generator=g,device=device) 
 
-            p, ll  = format_box(o_names, o_boxes)
-            l = np.array(o_boxes)
-            name_box = process_box_phrase(o_names, o_boxes)
-            #generate format box and positions for losses
-            position, box_att = Pharse2idx_2(pp, name_box)
-
-            """ os.makedirs( layout_folder, exist_ok=True)
-            draw_box_2(o_names, box_att ,layout_folder,meta["prompt"].replace(' ',"_") + '.jpg' ) """
-
-            print('position', position )
-            # phrase
-            meta["phrases"] = p
-            # location integer to visual box
-            meta['location_draw'] = l
-            #location scale, the input GLIGEN
-            meta["locations"] = l/512
-            # the box format using for CAR and SAR loss
-            meta['ll'] = box_att
-            # the locations of words which out of GPT4, label of boxes
-            meta['position'] = position
+            #start stopwatch
+            start=time.time()
             
-            image = run(meta, models, info_files, args, starting_noise, generator=g)
+            image = run(bench[sample_to_generate], models, args, starting_noise, generator=g)
 
             #end stopwatch
             end = time.time()
@@ -583,28 +650,28 @@ def main():
             log.log_time_run(start,end)
 
             #image.save(prompt_output_path / f'{seed}.png')
-            image.save(os.path.join(meta['save_folder_name'],meta['prompt'], str(seed)+".jpg" ))
+            image.save(os.path.join(os.path.join(output_path, str(seed)+".jpg" )))
             #list of tensors
             gen_images.append(tf.pil_to_tensor(image))
 
             #draw the bounding boxes
-            image=torchvision.utils.draw_bounding_boxes(tf.pil_to_tensor(image),torch.Tensor(meta['location_draw']),labels=meta['phrases'],colors=['blue', 'red', 'purple', 'orange', 'green', 'yellow', 'black', 'gray', 'white'],width=4)
+            image=torchvision.utils.draw_bounding_boxes(tf.pil_to_tensor(image),torch.Tensor(bench[sample_to_generate]['location_draw']),labels=bench[sample_to_generate]['phrases'],colors=['blue', 'red', 'purple', 'orange', 'green', 'yellow', 'black', 'gray', 'white'],width=4)
             #list of tensors
             gen_bboxes_images.append(image)
-            tf.to_pil_image(image).save(os.path.join(meta['save_folder_name'],meta['prompt'],str(seed)+"_bboxes.png"))
+            tf.to_pil_image(image).save(os.path.join(output_path,str(seed)+"_bboxes.png"))
         
         #log gpu stats
         log.log_gpu_memory_instance()
         #save to csv_file
-        log.save_log_to_csv(meta['prompt'])
+        log.save_log_to_csv(bench[sample_to_generate]['prompt'])
         
         # save a grid of results across all seeds without bboxes
-        tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_images,nrow=4,padding=0)).save(os.path.join(meta['save_folder_name'],meta['prompt'],meta['prompt']+".png"))
+        tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_images,nrow=4,padding=0)).save(os.path.join(output_path,bench[sample_to_generate]['prompt']+".png"))
         #joined_image = vis_utils.get_image_grid(gen_images)
         #joined_image.save(str(config.output_path) +"/"+ config.prompt + ".png")
 
         # save a grid of results across all seeds with bboxes
-        tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_bboxes_images,nrow=4,padding=0)).save(os.path.join(meta['save_folder_name'],meta['prompt'],meta['prompt']+"_bboxes.png"))
+        tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_bboxes_images,nrow=4,padding=0)).save(os.path.join(output_path,bench[sample_to_generate]['prompt']+"_bboxes.png"))
         #joined_image = vis_utils.get_image_grid(gen_bboxes_images)
         #joined_image.save(str(config.output_path) +"/"+ config.prompt + "_bboxes.png")
 
