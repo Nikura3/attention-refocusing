@@ -587,11 +587,9 @@ def main():
     bench = make_QBench()
 
     model_name="AR"
-    seeds = range(1,16)
+    seeds = range(1,17)
     models = load_ckpt(bench[0]["ckpt"])
 
-    gen_images=[]
-    gen_bboxes_images=[]
 
     for sample_to_generate in range(0,len(bench)):
 
@@ -630,7 +628,10 @@ def main():
         # the locations of words which out of GPT4, label of boxes
         bench[sample_to_generate]['position'] = position
         
-            
+
+        gen_images=[]
+        gen_bboxes_images=[]
+                    
         #number of generated images for one prompt
         for seed in seeds:
             print(f"Current seed is : {seed}")
