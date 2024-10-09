@@ -177,9 +177,7 @@ class PLMSSampler(object):
                 loss = loss2 +  loss1  +loss3 * loss_scale * 3
 
                 #print('loss', loss, loss1, loss2, loss3* loss_scale *3,loss_self*loss_scale/2 )
-                grad_cond = torch.autograd.grad(loss.requires_grad_(True), [x])[0]  
-                
-
+                grad_cond = torch.autograd.grad(loss.requires_grad_(True), [x],retain_graph=False)[0]  
             
                 x = x - grad_cond
                 x = x.detach()
@@ -209,7 +207,7 @@ class PLMSSampler(object):
                 
                 #print('loss', loss, loss1, loss2, loss3* loss_scale *3,loss_self*loss_scale/2 )
                 
-                grad_cond = torch.autograd.grad(loss.requires_grad_(True), [x])[0]  
+                grad_cond = torch.autograd.grad(loss.requires_grad_(True), [x],retain_graph=False)[0]  
                 x = x - grad_cond
                 x = x.detach()
                 iteration += 1
@@ -248,7 +246,7 @@ class PLMSSampler(object):
                         object_positions=object_positions, t = index1)*loss_scale
             loss = loss2
             print('loss', loss) 
-            hh = torch.autograd.backward(loss,create_graph=True)
+            hh = torch.autograd.backward(loss)
             grad_cond = x.grad
             x = x - grad_cond 
             x = x.detach()
@@ -286,7 +284,7 @@ class PLMSSampler(object):
             loss = caculate_loss_self_att(self_first, self_second, self_third, bboxes=bboxes,
                                 object_positions=object_positions, t = index1)*loss_scale 
             print('loss', loss)
-            hh = torch.autograd.backward(loss,create_graph=True)
+            hh = torch.autograd.backward(loss)
             grad_cond = x.grad
             
             x = x - grad_cond 
