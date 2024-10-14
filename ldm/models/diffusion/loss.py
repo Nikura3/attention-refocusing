@@ -215,5 +215,5 @@ def caculate_ground(ground_first, ground_second, ground_third,bboxes,
                 loss += cp_att_box.amax(dim=1).mean()
 
 
-    return loss / object_number, loss_self/ object_number
+    return torch.tensor(loss / object_number), torch.tensor(loss_self/ object_number)
 

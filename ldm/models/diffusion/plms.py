@@ -174,12 +174,33 @@ class PLMSSampler(object):
                 loss3, loss_self = caculate_ground(ground1, ground2, ground3, bboxes=bboxes,
                                     object_positions=object_positions, t = index1)
                 
-                loss = loss2 +  loss1  +loss3 * loss_scale * 3
+
+                loss = loss2 +  loss1  + loss3*loss_scale*3
+
+                """ print("loss1:",loss1)
+                print(type(loss1))
+                print("loss2:",loss2)
+                print(type(loss2))    
+                print("loss3:",loss3)
+                print(type(loss3))
+                builtins.input() """
 
                 #print('loss', loss, loss1, loss2, loss3* loss_scale *3,loss_self*loss_scale/2 )
-                grad_cond = torch.autograd.grad(loss.requires_grad_(True), [x],retain_graph=False)[0]  
-            
+                grad_cond = torch.autograd.grad(loss.requires_grad_(True), [x],retain_graph=True)[0]  
+                
+                """ grad_cond1 = torch.autograd.grad(loss1.requires_grad_(True), [x], retain_graph=True)[0]
+                grad_cond2 = torch.autograd.grad(loss2.requires_grad_(True), [x], retain_graph=True)[0]
+                grad_cond3 = torch.autograd.grad(loss3.requires_grad_(True), [x], allow_unused=True)[0]
+ """
                 x = x - grad_cond
+                
+                """ if grad_cond3 is None:
+                    print("NONE!")
+                    x = x - grad_cond1 - grad_cond2
+                else:
+                    print("REGULAR!")
+                    x = x - grad_cond1 - grad_cond2 - grad_cond3 """
+
                 x = x.detach()
                 iteration += 1
                 del loss1, loss2, loss3, att_first, att_second, att_third, self_first, self_second, self_third, ground1, ground2, ground3
@@ -202,13 +223,26 @@ class PLMSSampler(object):
                 loss2 *= loss_scale
                 loss3, loss_self = caculate_ground(ground1, ground2, ground3, bboxes=bboxes,
                                     object_positions=object_positions, t = index1)
-                
-                loss =  loss1 + loss2 +loss3 * loss_scale * 3
+            
+                loss =  loss1 + loss2 + loss3 * loss_scale * 3 
                 
                 #print('loss', loss, loss1, loss2, loss3* loss_scale *3,loss_self*loss_scale/2 )
                 
-                grad_cond = torch.autograd.grad(loss.requires_grad_(True), [x],retain_graph=False)[0]  
+                grad_cond = torch.autograd.grad(loss.requires_grad_(True), [x],retain_graph=True)[0]  
+                """ grad_cond1 = torch.autograd.grad(loss1.requires_grad_(True), [x], retain_graph=True)[0]
+                grad_cond2 = torch.autograd.grad(loss2.requires_grad_(True), [x], retain_graph=True)[0]
+                grad_cond3 = torch.autograd.grad(loss3.requires_grad_(True), [x],allow_unused=True)[0] """
+                
+                """ if grad_cond3 is None:
+                    print("NONE!")
+                    x = x - grad_cond1 - grad_cond2
+                else:
+                    print("REGULAR!")
+                    x = x - grad_cond1 - grad_cond2 - grad_cond3 """
                 x = x - grad_cond
+                
+                
+
                 x = x.detach()
                 iteration += 1
                 del loss1, loss2, loss3, att_first, att_second, att_third, self_first, self_second, self_third, ground1, ground2, ground3
