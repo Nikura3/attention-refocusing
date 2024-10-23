@@ -29,7 +29,14 @@ from PIL import Image, ImageDraw, ImageFont
 from urllib.request import urlopen
 device = "cuda"
 
+def convert_to_o_boxes(bboxes):
+    for i,b in enumerate(bboxes):
+        temp = tuple(b)
+        bboxes[i]=temp
+    return bboxes
+
 def make_QBench():
+
     prompts = ["A bus", #0
                "A bus and a bench", #1
                "A bus next to a bench and a bird", #2
@@ -43,9 +50,14 @@ def make_QBench():
                "A bus and a pizza on the left of a bench and a bird", #10
                "A bus and a pizza on the left of a bench and below a bird", #11
                ]
+
+    ids = []
+
+    for i in range(len(prompts)):
+        ids.append(str(i).zfill(3))
     
 
-    bbox = [[[2,121,251,460]],#0
+    bboxes = [[[2,121,251,460]],#0
             [[2,121,251,460], [274,345,503,496]],#1
             [[2,121,251,460], [274,345,503,496],[344,32,500,187]],#2
             [[2,121,251,460], [274,345,503,496],[344,32,500,187],[58,327,187,403]],#3
@@ -86,22 +98,26 @@ def make_QBench():
                      [2,5,11,14],#10
                      [2,5,11,15],#11
                      ]
-
-    o_boxes=convert_to_o_boxes(bbox)
+    
+    o_boxes=convert_to_o_boxes(bboxes)
     
     data_dict = {
-    i: {
-        "ckpt":"gligen_checkpoints/diffusion_pytorch_model.bin",
-        "prompt": prompts[i],
-        "o_boxes":o_boxes[i],
-        "locations": None,
-        "phrases": phrases[i],
-        "alpha_type":[0.3,0.0,0.7],
-        "ll":None
-    }
+        i: {
+            "ckpt":"gligen_checkpoints/diffusion_pytorch_model.bin",
+            "id": ids[i],
+            "prompt": prompts[i],
+            "o_boxes":o_boxes[i],
+            "locations": None,
+            "phrases": phrases[i],
+            "alpha_type":[0.3,0.0,0.7],
+            "ll":None
+        }
+        
     for i in range(len(prompts))
     }
+    
     return data_dict
+    
 
 def set_alpha_scale(model, alpha_scale):
     from ldm.modules.attention import GatedCrossAttentionDense, GatedSelfAttentionDense
@@ -576,24 +592,18 @@ def run(sample,models, p, starting_noise=None, generator=None):
         save_img(output_folder2, sample,sample['prompt'])
         save_img(output_folder1,img2,sample['prompt']) """
 
-def convert_to_o_boxes(bboxes):
-    for i,b in enumerate(bboxes):
-        temp = tuple(b)
-        bboxes[i]=temp
-    return bboxes
-
 
 def main():
     bench = make_QBench()
 
-    model_name="AR"
+    model_name="QBench-G_AR"
     seeds = range(1,17)
-    models = load_ckpt(bench[0]["ckpt"])
 
+    models = load_ckpt(bench[0]["ckpt"])
 
     for sample_to_generate in range(0,len(bench)):
 
-        output_path = os.path.join("results",model_name, bench[sample_to_generate]['prompt'])
+        output_path = "./results/"+model_name+"/"+ bench[sample_to_generate]['id']+'_'+bench[sample_to_generate]['prompt'] + "/"
 
         if (not os.path.isdir(output_path)):
             os.makedirs(output_path)
@@ -612,9 +622,6 @@ def main():
         name_box = process_box_phrase(o_names, o_boxes)
         #generate format box and positions for losses
         position, box_att = Pharse2idx_2(bench[sample_to_generate]['prompt'], name_box)
-
-        """ os.makedirs( layout_folder, exist_ok=True)
-        draw_box_2(o_names, box_att ,layout_folder,sample["prompt"].replace(' ',"_") + '.jpg' ) """
 
         print('position', position )
         # phrase
@@ -673,13 +680,9 @@ def main():
         
         # save a grid of results across all seeds without bboxes
         tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_images,nrow=4,padding=0)).save(os.path.join(output_path,bench[sample_to_generate]['prompt']+".png"))
-        #joined_image = vis_utils.get_image_grid(gen_images)
-        #joined_image.save(str(config.output_path) +"/"+ config.prompt + ".png")
 
         # save a grid of results across all seeds with bboxes
         tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_bboxes_images,nrow=4,padding=0)).save(os.path.join(output_path,bench[sample_to_generate]['prompt']+"_bboxes.png"))
-        #joined_image = vis_utils.get_image_grid(gen_bboxes_images)
-        #joined_image.save(str(config.output_path) +"/"+ config.prompt + "_bboxes.png")
 
 
 if __name__ == "__main__":
@@ -690,8 +693,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=1, help="")
     parser.add_argument("--no_plms", action='store_true', help="use DDIM instead. WARNING: I did not test the code yet")
     parser.add_argument("--guidance_scale", type=float,  default=7.5, help="")
-    parser.add_argument("--negative_prompt", type=str,  default='longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality', help="")
-    # parser.add_argument("--negative_prompt", type=str,  default="cropped images", help="")
+    parser.add_argument("--negative_prompt", type=str,  default='', help="")
     
     parser.add_argument("--file_save",default='results', type=str)
     parser.add_argument("--layout",default='layout', type=str)
