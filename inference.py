@@ -597,6 +597,12 @@ def main():
     bench = make_QBench()
 
     model_name="QBench-G_AR"
+    if (not os.path.isdir("./results/"+model_name)):
+            os.makedirs("./results/"+model_name)
+    
+    #intialize logger
+    log=logger.Logger("./results/"+model_name+"/")
+
     seeds = range(1,17)
 
     models = load_ckpt(bench[0]["ckpt"])
@@ -608,15 +614,11 @@ def main():
         if (not os.path.isdir(output_path)):
             os.makedirs(output_path)
 
-        #intialize logger
-        log=logger.Logger(output_path)
-
         print("Sample number ",sample_to_generate)
 
         o_names=bench[sample_to_generate]["phrases"]
         o_boxes=bench[sample_to_generate]["o_boxes"]
 
-        
         p, ll  = format_box(o_names, o_boxes)
         l = np.array(o_boxes)
         name_box = process_box_phrase(o_names, o_boxes)
@@ -633,8 +635,7 @@ def main():
         # the box format using for CAR and SAR loss
         bench[sample_to_generate]['ll'] = box_att
         # the locations of words which out of GPT4, label of boxes
-        bench[sample_to_generate]['position'] = position
-        
+        bench[sample_to_generate]['position'] = position  
 
         gen_images=[]
         gen_bboxes_images=[]
@@ -673,17 +674,16 @@ def main():
             gen_bboxes_images.append(image)
             tf.to_pil_image(image).save(os.path.join(output_path,str(seed)+"_bboxes.png"))
         
-        #log gpu stats
-        log.log_gpu_memory_instance()
-        #save to csv_file
-        log.save_log_to_csv(bench[sample_to_generate]['prompt'])
-        
         # save a grid of results across all seeds without bboxes
         tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_images,nrow=4,padding=0)).save(os.path.join(output_path,bench[sample_to_generate]['prompt']+".png"))
 
         # save a grid of results across all seeds with bboxes
         tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_bboxes_images,nrow=4,padding=0)).save(os.path.join(output_path,bench[sample_to_generate]['prompt']+"_bboxes.png"))
-
+    
+    #log gpu stats
+    log.log_gpu_memory_instance()
+    #save to csv_file
+    log.save_log_to_csv(model_name)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
