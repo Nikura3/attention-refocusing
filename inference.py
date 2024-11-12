@@ -27,6 +27,8 @@ import torchvision.transforms as transforms
 from pytorch_lightning import seed_everything
 from PIL import Image, ImageDraw, ImageFont
 from urllib.request import urlopen
+import pandas as pd
+import math
 device = "cuda"
 
 def convert_to_o_boxes(bboxes):
@@ -118,6 +120,47 @@ def make_QBench():
     
     return data_dict
     
+def readPromptsCSV(path):
+    df = pd.read_csv(path, dtype={'id': str})
+    conversion_dict={}
+    for i in range(0,len(df)):
+        bboxes=[]
+        phrases=[""]
+        
+        if not (isinstance(df.at[i,'obj1'], (int,float)) and math.isnan(df.at[i,'obj1'])):
+            phrases[0]=df.at[i,'obj1']
+            bboxes.append([int(x) for x in df.at[i,'bbox1'].split(',')])
+        if not (isinstance(df.at[i,'obj2'], (int,float)) and math.isnan(df.at[i,'obj2'])):
+            phrases[0]=phrases[0]+", "+df.at[i,'obj2']
+            bboxes.append([int(x) for x in df.at[i,'bbox2'].split(',')])
+        if not (isinstance(df.at[i,'obj3'], (int,float)) and math.isnan(df.at[i,'obj3'])):
+            phrases[0]=phrases[0]+", "+df.at[i,'obj3']
+            bboxes.append([int(x) for x in df.at[i,'bbox3'].split(',')])
+        if not (isinstance(df.at[i,'obj4'], (int,float)) and math.isnan(df.at[i,'obj4'])):
+            phrases[0]=phrases[0]+", "+ df.at[i,'obj4']
+            bboxes.append([int(x) for x in df.at[i,'bbox4'].split(',')]) 
+        
+        o_boxes=convert_to_o_boxes(bboxes)
+            
+        conversion_dict[df.at[i,'id']] = {
+            'prompt': df.at[i,'prompt'],
+            'obj1': df.at[i,'obj1'],
+            'bbox1':df.at[i,'bbox1'],
+            'obj2': df.at[i,'obj2'],
+            'bbox2':df.at[i,'bbox2'],
+            'obj3': df.at[i,'obj3'],
+            'bbox3':df.at[i,'bbox3'],
+            'obj4': df.at[i,'obj4'],
+            'bbox4':df.at[i,'bbox4'],
+            "ckpt":"gligen_checkpoints/diffusion_pytorch_model.bin",
+            "o_boxes":o_boxes,
+            "locations": None,
+            "phrases":phrases,
+            "alpha_type":[0.3,0.0,0.7],
+            "ll":None
+        }
+    
+    return conversion_dict   
 
 def set_alpha_scale(model, alpha_scale):
     from ldm.modules.attention import GatedCrossAttentionDense, GatedSelfAttentionDense
@@ -162,8 +205,6 @@ def alpha_generator(length, type=None):
     assert len(alphas) == length
     
     return alphas
-
-
 
 def load_ckpt(ckpt_path):
     
@@ -438,6 +479,7 @@ def prepare_batch_sem(sample, batch=1):
     # - - - - - prepare models - - - - - # 
 # @torch.no_grad()
 def run(sample,models, p, starting_noise=None, generator=None):
+    
     model, autoencoder, text_encoder, diffusion, config = models
 
     grounding_tokenizer_input = instantiate_from_config(config['grounding_tokenizer_input'])
@@ -594,48 +636,55 @@ def run(sample,models, p, starting_noise=None, generator=None):
 
 
 def main():
-    bench = make_QBench()
+    bench = readPromptsCSV(os.path.join("prompts","prompt_collection_bboxes.csv"))
 
-    model_name="QBench-G_AR"
+    model_name="PrompCollection-G_AR"
+    
     if (not os.path.isdir("./results/"+model_name)):
             os.makedirs("./results/"+model_name)
     
+    
     #intialize logger
     log=logger.Logger("./results/"+model_name+"/")
-
+    
+    # ids to iterate the dict
+    ids = []
+    for i in range(0,len(bench)):
+        ids.append(str(i).zfill(3))
+    
     seeds = range(1,17)
 
-    models = load_ckpt(bench[0]["ckpt"])
+    models = load_ckpt(bench['000']["ckpt"])
 
-    for sample_to_generate in range(0,len(bench)):
+    for id in ids:
 
-        output_path = "./results/"+model_name+"/"+ bench[sample_to_generate]['id']+'_'+bench[sample_to_generate]['prompt'] + "/"
+        output_path = "./results/"+model_name+"/"+ id+'_'+bench[id]['prompt'] + "/"
 
         if (not os.path.isdir(output_path)):
             os.makedirs(output_path)
 
-        print("Sample number ",sample_to_generate)
+        print("Sample number ",id)
 
-        o_names=bench[sample_to_generate]["phrases"]
-        o_boxes=bench[sample_to_generate]["o_boxes"]
+        o_names=bench[id]['phrases']
+        o_boxes=bench[id]['o_boxes']
 
         p, ll  = format_box(o_names, o_boxes)
         l = np.array(o_boxes)
         name_box = process_box_phrase(o_names, o_boxes)
         #generate format box and positions for losses
-        position, box_att = Pharse2idx_2(bench[sample_to_generate]['prompt'], name_box)
+        position, box_att = Pharse2idx_2(bench[id]['prompt'], name_box)
 
         print('position', position )
         # phrase
-        bench[sample_to_generate]['phrases'] = p
+        bench[id]['phrases'] = p
         # location integer to visual box
-        bench[sample_to_generate]['location_draw'] = l
+        bench[id]['location_draw'] = l
         #location scale, the input GLIGEN
-        bench[sample_to_generate]["locations"] = l/512
+        bench[id]["locations"] = l/512
         # the box format using for CAR and SAR loss
-        bench[sample_to_generate]['ll'] = box_att
+        bench[id]['ll'] = box_att
         # the locations of words which out of GPT4, label of boxes
-        bench[sample_to_generate]['position'] = position  
+        bench[id]['position'] = position  
 
         gen_images=[]
         gen_bboxes_images=[]
@@ -656,7 +705,7 @@ def main():
             #start stopwatch
             start=time.time()            
 
-            image = run(bench[sample_to_generate], models, args, starting_noise, generator=g)
+            image = run(bench[id], models, args, starting_noise, generator=g)
 
             #end stopwatch
             end = time.time()
@@ -669,16 +718,21 @@ def main():
             gen_images.append(tf.pil_to_tensor(image))
 
             #draw the bounding boxes
-            image=torchvision.utils.draw_bounding_boxes(tf.pil_to_tensor(image),torch.Tensor(bench[sample_to_generate]['location_draw']),labels=bench[sample_to_generate]['phrases'],colors=['blue', 'red', 'purple', 'orange', 'green', 'yellow', 'black', 'gray', 'white'],width=4)
+            image=torchvision.utils.draw_bounding_boxes(tf.pil_to_tensor(image),torch.Tensor(bench[id]['location_draw']),
+                                                        labels=bench[id]['phrases'],
+                                                        colors=['green', 'green', 'green', 'green', 'green', 'green', 'green', 'green', 'green'],
+                                                        width=4,
+                                                        font="font.ttf",
+                                                        font_size=20)
             #list of tensors
             gen_bboxes_images.append(image)
             tf.to_pil_image(image).save(os.path.join(output_path,str(seed)+"_bboxes.png"))
         
         # save a grid of results across all seeds without bboxes
-        tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_images,nrow=4,padding=0)).save(os.path.join(output_path,bench[sample_to_generate]['prompt']+".png"))
+        tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_images,nrow=4,padding=0)).save(os.path.join(output_path,bench[id]['prompt']+".png"))
 
         # save a grid of results across all seeds with bboxes
-        tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_bboxes_images,nrow=4,padding=0)).save(os.path.join(output_path,bench[sample_to_generate]['prompt']+"_bboxes.png"))
+        tf.to_pil_image(torchvision.utils.make_grid(tensor=gen_bboxes_images,nrow=4,padding=0)).save(os.path.join(output_path,bench[id]['prompt']+"_bboxes.png"))
     
     #log gpu stats
     log.log_gpu_memory_instance()
@@ -693,7 +747,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=1, help="")
     parser.add_argument("--no_plms", action='store_true', help="use DDIM instead. WARNING: I did not test the code yet")
     parser.add_argument("--guidance_scale", type=float,  default=7.5, help="")
-    parser.add_argument("--negative_prompt", type=str,  default='', help="")
+    parser.add_argument("--negative_prompt", type=str,  default='low quality, low res, distortion, watermark, monochrome, cropped, mutation, bad anatomy, collage, border, tiled', help="")
     
     parser.add_argument("--file_save",default='results', type=str)
     parser.add_argument("--layout",default='layout', type=str)
