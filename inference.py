@@ -125,19 +125,19 @@ def readPromptsCSV(path):
     conversion_dict={}
     for i in range(0,len(df)):
         bboxes=[]
-        phrases=[""]
+        phrases=[]
         
         if not (isinstance(df.at[i,'obj1'], (int,float)) and math.isnan(df.at[i,'obj1'])):
-            phrases[0]=df.at[i,'obj1']
+            phrases.append(df.at[i,'obj1'])
             bboxes.append([int(x) for x in df.at[i,'bbox1'].split(',')])
         if not (isinstance(df.at[i,'obj2'], (int,float)) and math.isnan(df.at[i,'obj2'])):
-            phrases[0]=phrases[0]+", "+df.at[i,'obj2']
+            phrases.append(df.at[i,'obj2'])
             bboxes.append([int(x) for x in df.at[i,'bbox2'].split(',')])
         if not (isinstance(df.at[i,'obj3'], (int,float)) and math.isnan(df.at[i,'obj3'])):
-            phrases[0]=phrases[0]+", "+df.at[i,'obj3']
+            phrases.append(df.at[i,'obj3'])
             bboxes.append([int(x) for x in df.at[i,'bbox3'].split(',')])
         if not (isinstance(df.at[i,'obj4'], (int,float)) and math.isnan(df.at[i,'obj4'])):
-            phrases[0]=phrases[0]+", "+ df.at[i,'obj4']
+            phrases.append(df.at[i,'obj4'])
             bboxes.append([int(x) for x in df.at[i,'bbox4'].split(',')]) 
         
         o_boxes=convert_to_o_boxes(bboxes)
