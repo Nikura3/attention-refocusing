@@ -15,7 +15,6 @@ from ldm.util import instantiate_from_config
 from trainer import batch_to_device
 from inpaint_mask_func import draw_masks_from_boxes
 import numpy as np
-import clip 
 from scipy.io import loadmat
 from functools import partial
 import torchvision.transforms.functional as F
@@ -25,7 +24,7 @@ import torchvision.transforms as transforms
 from utils.preprocess_input import Pharse2idx_2, process_box_phrase, format_box
 import torchvision.transforms as transforms
 from pytorch_lightning import seed_everything
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from urllib.request import urlopen
 import pandas as pd
 import math
@@ -36,89 +35,6 @@ def convert_to_o_boxes(bboxes):
         temp = tuple(b)
         bboxes[i]=temp
     return bboxes
-
-def make_QBench():
-
-    prompts = ["A bus", #0
-               "A bus and a bench", #1
-               "A bus next to a bench and a bird", #2
-               "A bus next to a bench with a bird and a pizza", #3
-               "A green bus", #4
-               "A green bus and a red bench", #5
-               "A green bus next to a red bench and a pink bird", #6
-               "A green bus next to a red bench with a pink bird and a yellow pizza", #7
-               "A bus on the left of a bench", #8
-               "A bus on the left of a bench and a bird", #9
-               "A bus and a pizza on the left of a bench and a bird", #10
-               "A bus and a pizza on the left of a bench and below a bird", #11
-               ]
-
-    ids = []
-
-    for i in range(len(prompts)):
-        ids.append(str(i).zfill(3))
-    
-
-    bboxes = [[[2,121,251,460]],#0
-            [[2,121,251,460], [274,345,503,496]],#1
-            [[2,121,251,460], [274,345,503,496],[344,32,500,187]],#2
-            [[2,121,251,460], [274,345,503,496],[344,32,500,187],[58,327,187,403]],#3
-            [[2,121,251,460]],#4
-            [[2,121,251,460], [274,345,503,496]],#5
-            [[2,121,251,460], [274,345,503,496],[344,32,500,187]],#6
-            [[2,121,251,460], [274,345,503,496],[344,32,500,187],[58,327,187,403]],#7
-            [[2,121,251,460],[274,345,503,496]],#8
-            [[2,121,251,460],[274,345,503,496],[344,32,500,187]],#9
-            [[2,121,251,460], [58,327,187,403], [274,345,503,496],[344,32,500,187]],#10
-            [[2,121,251,460], [58,327,187,403], [274,345,503,496],[344,32,500,187]],#11
-            ]
-
-    phrases = [["bus"],#0
-               ["bus", "bench"],#1
-               ["bus", "bench", "bird"],#2
-               ["bus","bench","bird","pizza"],#3
-               ["bus"],#4
-               ["bus", "bench"],#5
-               ["bus", "bench", "bird"],#6
-               ["bus","bench","bird","pizza"],#7
-               ["bus","bench"],#8
-               ["bus","bench","bird"],#9
-               ["bus","pizza","bench","bird"],#11
-               ["bus","pizza","bench","bird"]#12
-               ]
-
-    token_indices = [[2],#0
-                     [2,5],#1
-                     [2, 6, 9],#2
-                     [2,6,9,12],#3
-                     [3],#4
-                     [3,7],#5
-                     [3,8,12],#6
-                     [3,8,12,16],#7
-                     [2,8],#8
-                     [2,8,11],#9
-                     [2,5,11,14],#10
-                     [2,5,11,15],#11
-                     ]
-    
-    o_boxes=convert_to_o_boxes(bboxes)
-    
-    data_dict = {
-        i: {
-            "ckpt":"gligen_checkpoints/diffusion_pytorch_model.bin",
-            "id": ids[i],
-            "prompt": prompts[i],
-            "o_boxes":o_boxes[i],
-            "locations": None,
-            "phrases": phrases[i],
-            "alpha_type":[0.3,0.0,0.7],
-            "ll":None
-        }
-        
-    for i in range(len(prompts))
-    }
-    
-    return data_dict
     
 def readPromptsCSV(path):
     df = pd.read_csv(path, dtype={'id': str})
@@ -284,7 +200,7 @@ def prepare_batch(sample, batch=1, max_objs=30):
     images = [None]*len(phrases) if images==None else images 
     phrases = [None]*len(images) if phrases==None else phrases 
 
-    version = "openai/clip-vit-large-patch14"
+    version = "clip/openai/clip-vit-large-patch14"
     model = CLIPModel.from_pretrained(version).cuda()
     processor = CLIPProcessor.from_pretrained(version)
 

@@ -21,6 +21,15 @@ pip install -r requirements.txt
 
 Then download the model [GLIGEN](https://huggingface.co/gligen/gligen-generation-text-box/blob/main/diffusion_pytorch_model.bin) and put it in `gligen_checkpoints`
 
+Also download the CLIP model by running the script `download_clip.py`. This will create a new folder called `clip` where the model will be downloaded so that it can be reused. This will prevent network errors when running the job on the cluster.
+
+Export the following two global variables before running the `inference.py` script to prevent http calls. In fact, these calls might stop the execution if they fail and we don't want to start over every time. All the needed files should already be in the project directory by now anyway.
+
+```bash
+export HF_DATASETS_OFFLINE=1
+export HF_HUB_OFFLINE=1
+```
+
 ## Image generation
 
 The .csv file containing the prompts should be inside a folder named `prompts` that is posiotioned in the root of the project.
