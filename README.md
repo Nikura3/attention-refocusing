@@ -34,6 +34,9 @@ export HF_HUB_OFFLINE=1
 
 The .csv file containing the prompts should be inside a folder named `prompts` that is posiotioned in the root of the project.
 
+The .csv file used is expected to have the following structure (no limits in the number of objects):
+`id,prompt,obj1,bbox1,obj2,bbox2,obj3,bbox3,obj4,bbox4`
+
 Run the script `inference.py` with the following parameters:
 `--folder`: root folder for output (default="results")
 `--ckpt`: path to the checkpoint (type=str, default='gligen_checkpoints/diffusion_pytorch_model.bin')

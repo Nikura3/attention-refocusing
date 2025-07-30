@@ -1,6 +1,6 @@
 import time
 import argparse
-from PIL import Image, ImageDraw
+from PIL import Image
 from omegaconf import OmegaConf
 from ldm.models.diffusion.ddim import DDIMSampler
 
@@ -9,7 +9,6 @@ from utils import logger
 from ldm.models.diffusion.plms import PLMSSampler
 import os 
 from transformers import CLIPProcessor, CLIPModel
-from copy import deepcopy
 import torch 
 from ldm.util import instantiate_from_config
 from trainer import batch_to_device
@@ -23,9 +22,7 @@ import torchvision.transforms.functional as tf
 import torchvision.transforms as transforms
 from utils.preprocess_input import Pharse2idx_2, process_box_phrase, format_box
 import torchvision.transforms as transforms
-from pytorch_lightning import seed_everything
 from PIL import Image
-from urllib.request import urlopen
 import pandas as pd
 import math
 device = "cuda"
@@ -38,45 +35,42 @@ def convert_to_o_boxes(bboxes):
     
 def readPromptsCSV(path):
     df = pd.read_csv(path, dtype={'id': str})
-    conversion_dict={}
-    for i in range(0,len(df)):
-        bboxes=[]
-        phrases=[]
-        
-        if not (isinstance(df.at[i,'obj1'], (int,float)) and math.isnan(df.at[i,'obj1'])):
-            phrases.append(df.at[i,'obj1'])
-            bboxes.append([int(x) for x in df.at[i,'bbox1'].split(',')])
-        if not (isinstance(df.at[i,'obj2'], (int,float)) and math.isnan(df.at[i,'obj2'])):
-            phrases.append(df.at[i,'obj2'])
-            bboxes.append([int(x) for x in df.at[i,'bbox2'].split(',')])
-        if not (isinstance(df.at[i,'obj3'], (int,float)) and math.isnan(df.at[i,'obj3'])):
-            phrases.append(df.at[i,'obj3'])
-            bboxes.append([int(x) for x in df.at[i,'bbox3'].split(',')])
-        if not (isinstance(df.at[i,'obj4'], (int,float)) and math.isnan(df.at[i,'obj4'])):
-            phrases.append(df.at[i,'obj4'])
-            bboxes.append([int(x) for x in df.at[i,'bbox4'].split(',')]) 
-        
-        o_boxes=convert_to_o_boxes(bboxes)
-            
-        conversion_dict[df.at[i,'id']] = {
-            'prompt': df.at[i,'prompt'],
-            'obj1': df.at[i,'obj1'],
-            'bbox1':df.at[i,'bbox1'],
-            'obj2': df.at[i,'obj2'],
-            'bbox2':df.at[i,'bbox2'],
-            'obj3': df.at[i,'obj3'],
-            'bbox3':df.at[i,'bbox3'],
-            'obj4': df.at[i,'obj4'],
-            'bbox4':df.at[i,'bbox4'],
-            "ckpt":"gligen_checkpoints/diffusion_pytorch_model.bin",
-            "o_boxes":o_boxes,
+    conversion_dict = {}
+
+    for i in range(len(df)):
+        bboxes = []
+        phrases = []
+
+        # Dynamically detect object columns
+        obj_cols = [col for col in df.columns if col.startswith('obj')]
+        bbox_cols = [col for col in df.columns if col.startswith('bbox')]
+        # Sort to ensure correct order (obj1, obj2, ...)
+        obj_cols.sort()
+        bbox_cols.sort()
+        for obj_col, bbox_col in zip(obj_cols, bbox_cols):
+            obj_val = df.at[i, obj_col]
+            bbox_val = df.at[i, bbox_col]
+            if not (isinstance(obj_val, (int, float)) and math.isnan(obj_val)):
+                phrases.append(obj_val)
+                bboxes.append([int(x) for x in str(bbox_val).split(',')])
+
+        o_boxes = convert_to_o_boxes(bboxes)
+        # Add all obj/bbox columns to the dict for compatibility
+        entry = {
+            'prompt': df.at[i, 'prompt'],
+            "ckpt": "gligen_checkpoints/diffusion_pytorch_model.bin",
+            "o_boxes": o_boxes,
             "locations": None,
-            "phrases":phrases,
-            "alpha_type":[0.3,0.0,0.7],
-            "ll":None
+            "phrases": phrases,
+            "alpha_type": [0.3, 0.0, 0.7],
+            "ll": None
         }
-    
-    return conversion_dict   
+        for obj_col in obj_cols:
+            entry[obj_col] = df.at[i, obj_col]
+        for bbox_col in bbox_cols:
+            entry[bbox_col] = df.at[i, bbox_col]
+        conversion_dict[df.at[i, 'id']] = entry
+    return conversion_dict
 
 def set_alpha_scale(model, alpha_scale):
     from ldm.modules.attention import GatedCrossAttentionDense, GatedSelfAttentionDense
@@ -552,9 +546,9 @@ def run(sample,models, p, starting_noise=None, generator=None):
 
 
 def main():
-    bench = readPromptsCSV(os.path.join("prompts","prompt_collection_bboxes.csv"))
+    bench = readPromptsCSV(os.path.join("prompts","fullNewDataset.csv"))
 
-    model_name="PrompCollection-G_AR"
+    model_name="fullNewDataset-G_AR"
     
     if (not os.path.isdir("./results/"+model_name)):
             os.makedirs("./results/"+model_name)
@@ -566,11 +560,11 @@ def main():
     # ids to iterate the dict
     ids = []
     for i in range(0,len(bench)):
-        ids.append(str(i).zfill(3))
+        ids.append(str(i).zfill(4))
     
-    seeds = range(1,17)
+    seeds = range(1,9)
 
-    models = load_ckpt(bench['000']["ckpt"])
+    models = load_ckpt(bench['0000']["ckpt"])
 
     for id in ids:
 
@@ -654,6 +648,8 @@ def main():
     log.log_gpu_memory_instance()
     #save to csv_file
     log.save_log_to_csv(model_name)
+    print("End of generation process for ", model_name)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
